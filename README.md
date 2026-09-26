@@ -1,1 +1,1 @@
-# node-for-clash
+用于telegram聊天消息过滤
