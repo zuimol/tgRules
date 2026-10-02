@@ -11,6 +11,7 @@
 import argparse
 import json
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -26,6 +27,10 @@ COPY = True
 
 # 非空则同时把正则写入该文件（如 "rules.txt"），留空表示不写文件
 OUTPUT = ""
+
+# 只记录、不参与生成正则的分类（词照常攒着，gen 默认跳过）
+# 内容可以是现成的整条正则；显式写 gen 分类名 时原样输出，不转义、不合并
+RECORD_ONLY = {"互动刷屏"}
 
 # 数据文件位置，改成绝对路径也可以（如 r"D:\my\rules.json"）
 DATA = Path(__file__).resolve().parent / "data" / "blocked_words.json"
@@ -53,6 +58,10 @@ def save(cats):
 
 def escape(word):
     return "".join("\\" + c if c in META else c for c in word)
+
+
+def tag_of(cat):
+    return "（仅记录）" if cat in RECORD_ONLY else ""
 
 
 def regex_of(words, flavor="generic"):
@@ -85,18 +94,18 @@ def cmd_add(a, cats):
         entries.append({"word": a.word, "thought": thought,
                         "added_at": datetime.now().isoformat(timespec="seconds")})
     save(cats)
-    print(f"已记录：{cat} → {a.word}")
+    print(f"已记录：{cat} → {a.word}{tag_of(cat)}")
 
 
 def cmd_list(a, cats):
     for cat, entries in cats.items():
         for entry in entries:
-            print(f"{cat} | {entry['word']} | {entry['thought']} | {entry['added_at']}")
+            print(f"{cat}{tag_of(cat)} | {entry['word']} | {entry['thought']} | {entry['added_at']}")
 
 
 def cmd_cats(a, cats):
     for cat, entries in cats.items():
-        print(f"{cat}：{len(entries)} 个词")
+        print(f"{cat}{tag_of(cat)}：{len(entries)} 个词")
 
 
 def cmd_rm(a, cats):
@@ -117,8 +126,20 @@ def cmd_thought(a, cats):
 
 
 def cmd_gen(a, cats):
-    names = a.categories or list(cats)
-    text = "\n".join(regex_of([e["word"] for e in cats[n]], a.flavor or FLAVOR) for n in names)
+    if a.categories:
+        names = a.categories
+    else:
+        names = [n for n in cats if n not in RECORD_ONLY]
+        skipped = [n for n in cats if n in RECORD_ONLY and cats[n]]
+        if skipped:
+            print(f"（跳过仅记录分类：{'、'.join(skipped)}）", file=sys.stderr)
+    lines = []
+    for n in names:
+        words = [e["word"] for e in (cats.get(n) or [])]
+        if not words:
+            continue
+        lines.append("\n".join(words) if n in RECORD_ONLY else regex_of(words, a.flavor or FLAVOR))
+    text = "\n".join(lines)
     print(text)
     out = a.output or OUTPUT
     if out:
